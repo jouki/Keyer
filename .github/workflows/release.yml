@@ -1,7 +1,7 @@
 name: Build and Release
 
-# Spustí se při pushnutí tagu ve formátu v* (např. v1.0.0),
-# nebo ručně přes "Run workflow" v záložce Actions.
+# Runs when a tag like v* is pushed (e.g. v1.0.0),
+# or manually via "Run workflow" in the Actions tab.
 on:
   push:
     tags:
@@ -9,15 +9,15 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write   # nutné pro vytvoření release a nahrání assetu
+  contents: write   # required to create the release and upload the asset
 
 jobs:
   build:
     runs-on: windows-latest
 
     env:
-      # Token se mapuje sem, aby šel použít v 'if' podmínce (secrets nelze v 'if' použít přímo).
-      # Krok podpisu se přeskočí, dokud secret SIGNPATH_API_TOKEN nedoplníš.
+      # Mapped here so it can be used in an 'if' condition (secrets can't be used in 'if' directly).
+      # The signing step is skipped until you add the SIGNPATH_API_TOKEN secret.
       SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
 
     steps:
@@ -33,23 +33,18 @@ jobs:
       - name: Restore NuGet packages
         run: nuget restore Keyer.sln
 
+      # Costura.Fody embeds the dependencies into a single self-contained Keyer.exe
+      # during this build (no separate merge step needed).
       - name: Build (Release)
         run: msbuild Keyer.sln /p:Configuration=Release /p:Platform="Any CPU" /t:Rebuild /v:minimal /nologo
 
-      - name: Merge into single exe (ILRepack)
+      - name: Stage single-file executable
         shell: pwsh
         run: |
-          nuget install ILRepack -Version 2.0.40 -OutputDirectory tools
-          $ilr = (Get-ChildItem tools -Recurse -Filter ILRepack.exe | Select-Object -First 1).FullName
-          $rel = "Keyer\bin\Release"
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          & $ilr /target:exe /targetplatform:v4 /allowdup:DotfuscatorAttribute `
-            "/out:dist\Keyer.exe" `
-            "$rel\Keyer.exe" `
-            "$rel\Spire.License.dll" `
-            "$rel\Spire.Pdf.dll" `
-            "$rel\Spire.XLS.dll"
-          if ($LASTEXITCODE -ne 0) { throw "ILRepack failed" }
+          Copy-Item "Keyer\bin\Release\Keyer.exe" "dist\Keyer.exe" -Force
+          $sizeMB = [math]::Round((Get-Item "dist\Keyer.exe").Length/1MB, 1)
+          Write-Host "Staged dist\Keyer.exe ($sizeMB MB)"
 
       - name: Upload unsigned artifact
         id: upload-unsigned
@@ -58,10 +53,10 @@ jobs:
           name: Keyer-unsigned
           path: dist/Keyer.exe
 
-      # ---- Podpis přes SignPath (proběhne až po schválení projektu a doplnění secret/vars) ----
-      # Až bude SignPath projekt schválený, nastav:
-      #   - Repo Secret:   SIGNPATH_API_TOKEN     (Settings > Secrets and variables > Actions > Secrets)
-      #   - Repo Variable: SIGNPATH_ORGANIZATION_ID, SIGNPATH_PROJECT_SLUG, SIGNPATH_POLICY_SLUG (Variables)
+      # ---- Code signing via SignPath (runs once the project is approved and the secret/vars are set) ----
+      # When the SignPath project is approved, configure:
+      #   - Repo Secret:    SIGNPATH_API_TOKEN     (Settings > Secrets and variables > Actions > Secrets)
+      #   - Repo Variables: SIGNPATH_ORGANIZATION_ID, SIGNPATH_PROJECT_SLUG, SIGNPATH_POLICY_SLUG (Variables)
       - name: Sign with SignPath
         if: ${{ env.SIGNPATH_API_TOKEN != '' }}
         id: signpath
@@ -79,14 +74,14 @@ jobs:
         shell: pwsh
         run: |
           if (Test-Path "signed\Keyer.exe") {
-            Write-Host "Používám PODEPSANÝ exe."
+            Write-Host "Using SIGNED exe."
             Copy-Item "signed\Keyer.exe" "Keyer.exe" -Force
           } else {
-            Write-Host "SignPath není nakonfigurován – používám NEpodepsaný exe."
+            Write-Host "SignPath not configured - using UNSIGNED exe."
             Copy-Item "dist\Keyer.exe" "Keyer.exe" -Force
           }
 
-      # Release se vytvoří jen při pushnutí tagu (ne při ručním workflow_dispatch).
+      # The release is only created when a tag is pushed (not on manual workflow_dispatch).
       - name: Create GitHub Release
         if: ${{ github.ref_type == 'tag' }}
         uses: softprops/action-gh-release@v2

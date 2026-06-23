@@ -35,7 +35,7 @@ It's a single self-contained executable — no installation, the required librar
 
 ### ⚠️ Antivirus false positive
 
-Because `Keyer.exe` is **unsigned** and bundles its dependencies into a **single merged executable** (via ILRepack), some antivirus engines (e.g. ESET, Windows Defender) may flag it with a generic heuristic detection. **This is a false positive** — the full source is in this repository and the executable is built automatically by the [GitHub Actions workflow](.github/workflows/release.yml), so you can verify exactly what goes into it.
+Because `Keyer.exe` is **unsigned** and bundles its dependencies into a **single self-contained executable** (via Costura.Fody), some antivirus engines (e.g. ESET, Windows Defender) may flag it with a generic heuristic detection. **This is a false positive** — the full source is in this repository and the executable is built automatically by the [GitHub Actions workflow](.github/workflows/release.yml), so you can verify exactly what goes into it.
 
 If your antivirus blocks it, you can:
 
@@ -51,9 +51,9 @@ nuget restore Keyer.sln
 msbuild Keyer.sln /p:Configuration=Release /p:Platform="Any CPU" /t:Rebuild
 ```
 
-The build output is in `Keyer\bin\Release\`.
+The dependencies are embedded into a single self-contained `Keyer.exe` automatically during the build by [Costura.Fody](https://github.com/Fody/Costura), so the build output `Keyer\bin\Release\Keyer.exe` is already a standalone file.
 
-To produce the single-file `Keyer.exe`, the dependencies are merged with [ILRepack](https://github.com/gluck/il-repack) — see [`.github/workflows/release.yml`](.github/workflows/release.yml), which builds, merges and publishes a release automatically on every `v*` tag.
+The [`.github/workflows/release.yml`](.github/workflows/release.yml) workflow builds and publishes a release automatically on every `v*` tag.
 
 ## License
 
