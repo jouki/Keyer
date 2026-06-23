@@ -33,6 +33,15 @@ It's a single self-contained executable — no installation, the required librar
 
 - Windows with **.NET Framework 4.7.2** (pre-installed on current Windows versions).
 
+### ⚠️ Antivirus false positive
+
+Because `Keyer.exe` is **unsigned** and bundles its dependencies into a **single merged executable** (via ILRepack), some antivirus engines (e.g. ESET, Windows Defender) may flag it with a generic heuristic detection. **This is a false positive** — the full source is in this repository and the executable is built automatically by the [GitHub Actions workflow](.github/workflows/release.yml), so you can verify exactly what goes into it.
+
+If your antivirus blocks it, you can:
+
+- **Allow / restore** the file in your antivirus (e.g. in ESET: *Tools → Log files → Detected threats*, then add a detection exclusion), or
+- **Build it yourself** from source (see below) and run your own copy.
+
 ## Building from source
 
 Requires Visual Studio 2022 (or MSBuild) with .NET Framework 4.7.2 targeting pack.
