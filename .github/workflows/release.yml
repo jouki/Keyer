@@ -1,0 +1,95 @@
+name: Build and Release
+
+# Spustí se při pushnutí tagu ve formátu v* (např. v1.0.0),
+# nebo ručně přes "Run workflow" v záložce Actions.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write   # nutné pro vytvoření release a nahrání assetu
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    env:
+      # Token se mapuje sem, aby šel použít v 'if' podmínce (secrets nelze v 'if' použít přímo).
+      # Krok podpisu se přeskočí, dokud secret SIGNPATH_API_TOKEN nedoplníš.
+      SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Setup NuGet
+        uses: nuget/setup-nuget@v2
+
+      - name: Restore NuGet packages
+        run: nuget restore Keyer.sln
+
+      - name: Build (Release)
+        run: msbuild Keyer.sln /p:Configuration=Release /p:Platform="Any CPU" /t:Rebuild /v:minimal /nologo
+
+      - name: Merge into single exe (ILRepack)
+        shell: pwsh
+        run: |
+          nuget install ILRepack -Version 2.0.40 -OutputDirectory tools
+          $ilr = (Get-ChildItem tools -Recurse -Filter ILRepack.exe | Select-Object -First 1).FullName
+          $rel = "Keyer\bin\Release"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          & $ilr /target:exe /targetplatform:v4 /allowdup:DotfuscatorAttribute `
+            "/out:dist\Keyer.exe" `
+            "$rel\Keyer.exe" `
+            "$rel\Spire.License.dll" `
+            "$rel\Spire.Pdf.dll" `
+            "$rel\Spire.XLS.dll"
+          if ($LASTEXITCODE -ne 0) { throw "ILRepack failed" }
+
+      - name: Upload unsigned artifact
+        id: upload-unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: Keyer-unsigned
+          path: dist/Keyer.exe
+
+      # ---- Podpis přes SignPath (proběhne až po schválení projektu a doplnění secret/vars) ----
+      # Až bude SignPath projekt schválený, nastav:
+      #   - Repo Secret:   SIGNPATH_API_TOKEN     (Settings > Secrets and variables > Actions > Secrets)
+      #   - Repo Variable: SIGNPATH_ORGANIZATION_ID, SIGNPATH_PROJECT_SLUG, SIGNPATH_POLICY_SLUG (Variables)
+      - name: Sign with SignPath
+        if: ${{ env.SIGNPATH_API_TOKEN != '' }}
+        id: signpath
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG }}
+          github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+
+      - name: Prepare release asset
+        shell: pwsh
+        run: |
+          if (Test-Path "signed\Keyer.exe") {
+            Write-Host "Používám PODEPSANÝ exe."
+            Copy-Item "signed\Keyer.exe" "Keyer.exe" -Force
+          } else {
+            Write-Host "SignPath není nakonfigurován – používám NEpodepsaný exe."
+            Copy-Item "dist\Keyer.exe" "Keyer.exe" -Force
+          }
+
+      # Release se vytvoří jen při pushnutí tagu (ne při ručním workflow_dispatch).
+      - name: Create GitHub Release
+        if: ${{ github.ref_type == 'tag' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Keyer.exe
+          generate_release_notes: true
