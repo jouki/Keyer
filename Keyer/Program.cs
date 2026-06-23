@@ -15,7 +15,7 @@ namespace Keyer
         [STAThread]
         static void Main(string[] args) {
             var guardians = new List<string> { "Doc", "Jouki", "ILeonx", "Preston", "Thomas", "Masusder", "Grimes", "MakinDay", "ravendoom", "Extra #1", "Extra #2", "Extra #3", "Extra #4" }; //12
-            var extraCodes = 5;
+            var extraCodes = 4;
             var adminsCount = guardians.Count - extraCodes;
             var result = string.Empty;
             string clipboard = Clipboard.GetText();
